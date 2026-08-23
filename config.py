@@ -67,6 +67,13 @@ RETRY_BACKOFF = 1.5       # seconds, multiplied by attempt number
 
 FLASH_BRIGHTNESS = 100    # brightness used during the flash itself (percent)
 
+# A Govee bulb remembers its color/brightness across a power cycle, and the
+# only way to write them is with the bulb lit. So restoring the pre-flash
+# color of a bulb that was OFF costs one extra blip of light before it goes
+# back off. True = the bulb's remembered state is left exactly as found;
+# False = it ends off but remembering the signal color.
+RESTORE_COLOR_WHEN_OFF = True
+
 # --- Signals --------------------------------------------------------------
 # The extension point. A signal maps a Claude Code lifecycle event to a
 # visual presentation. To add a new signal type: add an entry here and drop

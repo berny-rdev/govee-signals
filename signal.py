@@ -76,16 +76,18 @@ def _capture(client) -> DeviceState:
 def _flash(client, rgb: int, count: int):
     """On/off `count` times in `rgb`.
 
-    Color and brightness are set once up front rather than every cycle --
-    the bulb keeps them across a power toggle, and every call we skip is
-    one less against the Govee rate limit.
+    set_color is what turns the bulb on, deliberately: on a Govee bulb a
+    color command applies power and color together, so the light comes up
+    already showing the signal color. Calling set_power(True) first would
+    light it in whatever color it held before -- and since calls are
+    throttled ~300ms apart, that stale color would be plainly visible for
+    a beat before the signal color landed. Most obvious starting from off.
     """
-    client.set_power(True)
-    client.set_color(rgb)
-    client.set_brightness(config.FLASH_BRIGHTNESS)
     for i in range(count):
-        if i > 0:
-            client.set_power(True)
+        client.set_color(rgb)
+        if i == 0:
+            # Once is enough; brightness survives the power toggles below.
+            client.set_brightness(config.FLASH_BRIGHTNESS)
         time.sleep(config.FLASH_ON_SECONDS)
         client.set_power(False)
         if i < count - 1:
@@ -95,8 +97,19 @@ def _flash(client, rgb: int, count: int):
 def _restore(client, original: DeviceState):
     try:
         if not original.power:
+            # Writing color/brightness lights the bulb, so putting back what
+            # an off bulb was remembering costs one visible blip. Skipped
+            # when there is nothing to put back -- notably when the capture
+            # failed and every field is None.
+            if config.RESTORE_COLOR_WHEN_OFF and original.rgb is not None:
+                client.set_color(original.rgb)
+                # The flash already left brightness at FLASH_BRIGHTNESS; only
+                # correct it when it differs, to keep the blip short.
+                if (original.brightness is not None
+                        and original.brightness != config.FLASH_BRIGHTNESS):
+                    client.set_brightness(original.brightness)
             client.set_power(False)
-            log.info("restored: off")
+            log.info("restored: off (was %r)", original)
             return
         if original.rgb is not None:
             client.set_color(original.rgb)

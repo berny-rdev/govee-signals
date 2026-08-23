@@ -10,10 +10,15 @@ bulb back exactly the way it was.
 | `StopFailure`  | Turn ended due to an API/runtime error  | 🔴 red ×2         |
 
 A flash is: on in the signal color → 500 ms → off → 300 ms → repeat once →
-restore. Restore is **capture-then-restore**, not a queue: the bulb's power,
-color, and brightness are read before the flash and written back after, so a
-signal never leaves the room in the wrong state. If the bulb was off it goes
-back off.
+restore. The bulb is lit with a *color* command rather than a power command —
+on a Govee bulb that applies power and color together, so it comes up already
+showing the signal color. Turning power on first would light it in whatever
+color it held before, and calls are throttled ~300 ms apart, so that stale
+color would be visible for a beat. Restore is **capture-then-restore**, not a
+queue: the bulb's power, color, and brightness are read before the flash and
+written back after, so a signal never leaves the room in the wrong state. If
+the bulb was off it goes back off — and back to remembering the color and
+brightness it had, at the cost of one brief blip of light (see below).
 
 Python 3.8+, standard library only. No `pip install`.
 
@@ -127,7 +132,23 @@ backoff, honors `Retry-After` on HTTP 429, and does not retry other 4xx
 responses (a bad key or device id won't get better by asking again). It warns
 into the log when the remaining-request header drops below 10.
 
-One flash costs 5 calls: 1 state read, 3 to light it, 1+ to restore.
+One flash costs 8-9 calls: 1 state read, 5 to run the two cycles, and 2-3 to
+restore.
+
+## The blip, and `RESTORE_COLOR_WHEN_OFF`
+
+A Govee bulb remembers its color and brightness across a power cycle, and the
+only way to write them is with the bulb lit. So a signal fired while the bulb
+is **off** ends with one brief blip in the original color before it switches
+back off — that blip is what stops the bulb from remembering the *signal*
+color and coming up blue (or red, or yellow) the next time you switch it on
+from the Govee app.
+
+That is the default, and it makes the off-case restore lossless: power, color,
+and brightness all come back exactly as found. Set `RESTORE_COLOR_WHEN_OFF =
+False` in `config.py` to drop the blip and accept the remembered signal color
+instead. Brightness is only rewritten when it actually differs from
+`FLASH_BRIGHTNESS`, which keeps the blip as short as possible.
 
 ## Files
 
