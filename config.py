@@ -81,17 +81,17 @@ RESTORE_COLOR_WHEN_OFF = True
 
 SIGNALS = {
     "notification": {
-        "color": "yellow",
+        "color": "blue",
         "flashes": FLASH_COUNT,
         "description": "Claude needs your input or a decision",
     },
     "stop": {
-        "color": "blue",
+        "color": "green",
         "flashes": FLASH_COUNT,
         "description": "Task finished cleanly",
     },
     "stop_failure": {
-        "color": "red",
+        "color": "purple",
         "flashes": FLASH_COUNT,
         "description": "Turn ended due to an API/runtime error",
     },

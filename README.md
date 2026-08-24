@@ -5,9 +5,9 @@ bulb back exactly the way it was.
 
 | Event          | Meaning                                | Signal            |
 | -------------- | -------------------------------------- | ----------------- |
-| `Notification` | Claude needs your input or a decision   | 🟡 yellow ×2      |
-| `Stop`         | Task finished cleanly                   | 🔵 blue ×2        |
-| `StopFailure`  | Turn ended due to an API/runtime error  | 🔴 red ×2         |
+| `Notification` | Claude needs your input or a decision   | 🔵 blue ×2        |
+| `Stop`         | Task finished cleanly                   | 🟢 green ×2       |
+| `StopFailure`  | Turn ended due to an API/runtime error  | 🟣 purple ×2      |
 
 A flash is: on in the signal color → 500 ms → off → 300 ms → repeat once →
 restore. The bulb is lit with a *color* command rather than a power command —
@@ -147,8 +147,35 @@ from the Govee app.
 That is the default, and it makes the off-case restore lossless: power, color,
 and brightness all come back exactly as found. Set `RESTORE_COLOR_WHEN_OFF =
 False` in `config.py` to drop the blip and accept the remembered signal color
-instead. Brightness is only rewritten when it actually differs from
-`FLASH_BRIGHTNESS`, which keeps the blip as short as possible.
+instead.
+
+The blip is kept as short as possible: brightness is handed back during the
+*last lit cycle of the flash itself* rather than during the restore, so the
+restore only needs one lit call (~0.7 s) instead of two (~2.3 s, long enough to
+read as a third flash). The cost is a barely-visible dim at the tail of the
+final flash.
+
+**The blip shows your bulb's resting color**, so the signal colors deliberately
+avoid it. This bulb rests on red, which is why red is not used by any signal —
+otherwise a successful task would read green, green, red and look like
+success-then-error. If you change the resting color in the Govee app, check it
+against the table above.
+
+## Which notifications flash
+
+Claude Code fires a `Notification` for several things, and the hook's `matcher`
+is regex-matched against the event's `notification_type`. Ours is:
+
+```
+permission_prompt|worker_permission_prompt|agent_needs_input
+```
+
+so the bulb only flashes blue when Claude genuinely wants something. The one
+that matters most to exclude is `idle_prompt` — Claude Code fires it 60 s after
+*every* turn ends, so without the matcher you get a yellow flash a minute after
+every completed task with nothing pending. Other types you could add:
+`agent_completed`, `elicitation_response`, `auth_success`, `computer_use_enter`,
+`computer_use_exit`, `push_notification`, `quota_auto_resume_fired`.
 
 ## Files
 

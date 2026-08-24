@@ -51,13 +51,21 @@ def flash_signal(name: str, client: GoveeClient = None) -> bool:
     log.info("signal=%s color=%s rgb=#%06X", name, spec["color"], spec["rgb"])
 
     original = _capture(client)
+    # Only worth pre-setting when we are heading back to off with a colour to
+    # put back -- that is the path where the blip is visible.
+    tail = None
+    if (config.RESTORE_COLOR_WHEN_OFF and not original.power
+            and original.rgb is not None
+            and original.brightness is not None
+            and original.brightness != config.FLASH_BRIGHTNESS):
+        tail = original.brightness
     try:
-        _flash(client, spec["rgb"], spec["flashes"])
+        _flash(client, spec["rgb"], spec["flashes"], tail_brightness=tail)
     except GoveeError as exc:
         log.error("flash failed: %s", exc)
         return False
     finally:
-        _restore(client, original)
+        _restore(client, original, tail_handled=tail is not None)
     return True
 
 
@@ -73,7 +81,7 @@ def _capture(client) -> DeviceState:
         return DeviceState()
 
 
-def _flash(client, rgb: int, count: int):
+def _flash(client, rgb: int, count: int, tail_brightness=None):
     """On/off `count` times in `rgb`.
 
     set_color is what turns the bulb on, deliberately: on a Govee bulb a
@@ -89,12 +97,18 @@ def _flash(client, rgb: int, count: int):
             # Once is enough; brightness survives the power toggles below.
             client.set_brightness(config.FLASH_BRIGHTNESS)
         time.sleep(config.FLASH_ON_SECONDS)
+        if i == count - 1 and tail_brightness is not None:
+            # Put brightness back while the bulb is still lit in the signal
+            # color. Doing it here rather than during the restore halves the
+            # length of the restore blip, which otherwise reads as a third
+            # flash. Costs a barely-visible dim at the tail of the last flash.
+            client.set_brightness(tail_brightness)
         client.set_power(False)
         if i < count - 1:
             time.sleep(config.FLASH_OFF_SECONDS)
 
 
-def _restore(client, original: DeviceState):
+def _restore(client, original: DeviceState, tail_handled=False):
     try:
         if not original.power:
             # Writing color/brightness lights the bulb, so putting back what
@@ -103,10 +117,11 @@ def _restore(client, original: DeviceState):
             # failed and every field is None.
             if config.RESTORE_COLOR_WHEN_OFF and original.rgb is not None:
                 client.set_color(original.rgb)
-                # The flash already left brightness at FLASH_BRIGHTNESS; only
-                # correct it when it differs, to keep the blip short.
+                # Normally _flash already handed brightness back on its last
+                # lit cycle; this only fires if that was skipped.
                 if (original.brightness is not None
-                        and original.brightness != config.FLASH_BRIGHTNESS):
+                        and original.brightness != config.FLASH_BRIGHTNESS
+                        and tail_handled is not True):
                     client.set_brightness(original.brightness)
             client.set_power(False)
             log.info("restored: off (was %r)", original)
