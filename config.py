@@ -2,7 +2,7 @@
 
 Everything that a new signal type might need to change lives here:
 colors, timing, and the signal -> presentation mapping. Adding a new
-signal should not require touching govee_client.py or signal.py.
+signal should not require touching govee_client.py or signals.py.
 """
 
 import os

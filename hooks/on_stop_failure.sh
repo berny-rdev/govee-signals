@@ -9,6 +9,6 @@ PYTHON="${GOVEE_SIGNALS_PYTHON:-python3}"
 
 # .env is loaded explicitly by config.py from $PROJECT_DIR/.env --
 # nothing here relies on the shell environment already having the keys.
-nohup "$PYTHON" "$PROJECT_DIR/signal.py" "stop_failure" >/dev/null 2>&1 &
+nohup "$PYTHON" "$PROJECT_DIR/signals.py" "stop_failure" >/dev/null 2>&1 &
 
 exit 0

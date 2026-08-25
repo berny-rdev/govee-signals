@@ -6,9 +6,9 @@ signal color, then puts it back exactly how it was. If the bulb was off it
 goes back off; if it was on it gets its color and brightness back.
 
 Usage:
-    python3 signal.py stop          # a configured signal
-    python3 signal.py yellow        # an ad-hoc color from config.COLORS
-    python3 signal.py --list
+    python3 signals.py stop          # a configured signal
+    python3 signals.py yellow        # an ad-hoc color from config.COLORS
+    python3 signals.py --list
 """
 
 import argparse
@@ -47,9 +47,27 @@ def flash_signal(name: str, client: GoveeClient = None) -> bool:
         log.error("cannot run signal %r: %s", name, exc)
         return False
 
-    client = client or GoveeClient()
     log.info("signal=%s color=%s rgb=#%06X", name, spec["color"], spec["rgb"])
+    return flash_color(spec["rgb"], spec["flashes"], client=client)
 
+
+def flash_color(rgb: int, times: int = None, client: GoveeClient = None) -> bool:
+    """Capture -> flash `rgb` `times` -> restore. Returns True on success.
+
+    The colour-level entry point, for callers that are not driving one of
+    the configured signals -- the MCP server's flash_custom tool, mainly.
+    flash_signal() is the name-level wrapper around this.
+
+    Never raises, for the same reason flash_signal() does not.
+    """
+    times = config.FLASH_COUNT if times is None else max(1, int(times))
+    try:
+        config.validate()
+    except RuntimeError as exc:
+        log.error("cannot flash: %s", exc)
+        return False
+
+    client = client or GoveeClient()
     original = _capture(client)
     # Only worth pre-setting when we are heading back to off with a colour to
     # put back -- that is the path where the blip is visible.
@@ -60,7 +78,7 @@ def flash_signal(name: str, client: GoveeClient = None) -> bool:
             and original.brightness != config.FLASH_BRIGHTNESS):
         tail = original.brightness
     try:
-        _flash(client, spec["rgb"], spec["flashes"], tail_brightness=tail)
+        _flash(client, rgb, times, tail_brightness=tail)
     except GoveeError as exc:
         log.error("flash failed: %s", exc)
         return False

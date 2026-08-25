@@ -50,28 +50,85 @@ Python 3.8+, standard library only. No `pip install`.
    python3 test_signals.py --devices  # list devices on the account
    ```
 
-   `python3 signal.py stop -v` does a single flash with logging on stderr.
-   `python3 signal.py --list` prints every known signal and color.
+   `python3 signals.py stop -v` does a single flash with logging on stderr.
+   `python3 signals.py --list` prints every known signal and color.
 
 5. **Wire the hooks.** They are already registered in `~/.claude/settings.json`
    under the `Notification`, `Stop`, and `StopFailure` events. Run `/hooks` in
    Claude Code to review, edit, or disable them. If you move this folder, update
    the paths there.
 
-## How it fits together
+## Two ways in: hooks and MCP tools
+
+There are two independent triggers, and they answer different questions.
+
+**Hooks** fire at fixed points in a Claude Code session — a turn ended, a
+permission is pending. They are configured once in `~/.claude/settings.json`,
+Claude has no say in whether they run, and they are the same every time.
+
+**MCP tools** are Claude's own judgment calls *during* a task: "I am about to
+ask a question, the user has looked away, flash the light now." Claude decides
+whether and when to call them, based on the tool descriptions in
+`mcp_server.py`. They fire mid-turn, where a hook cannot reach.
+
+Both bottom out in the same `flash_color()`, so capture/restore, throttling,
+retries and colour definitions behave identically either way.
 
 ```
-hooks/on_*.sh          thin shell wrappers, one per event
-   └─ signal.py        flash_signal(name): capture → flash → restore
-        ├─ config.py       colors, timing, signal definitions, .env loading
-        └─ govee_client.py get_state / set_power / set_color / set_brightness
+hooks/on_*.sh            fixed lifecycle moments (Claude Code decides)
+mcp_server.py            in-task tool calls (Claude decides)
+   │
+   └─ signals.py         flash_signal(name) / flash_color(rgb, times)
+        │                    capture → flash → restore
+        ├─ config.py         colors, timing, signal definitions, .env loading
+        └─ govee_client.py   get_state / set_power / set_color / set_brightness
 ```
+
+### The MCP server
+
+`mcp_server.py` speaks MCP over **stdio** — it is launched as a subprocess and
+nothing listens on a network socket. It exposes four tools:
+
+| Tool | Colour | When Claude should call it |
+| ---- | ------ | -------------------------- |
+| `notify_decision_needed()` | 🔵 blue | About to ask you something and wait |
+| `notify_task_complete()`   | 🟢 green | A milestone landed mid-task |
+| `notify_error()`           | 🟣 purple | A real blocker needing a human |
+| `flash_custom(color, times)` | any | Escape hatch: named colour or hex |
+
+The colours come from `config.SIGNALS`, so changing a signal's colour changes
+it for the hook and the tool at once.
+
+`notify_task_complete` deliberately tells Claude *not* to call it at the end of
+a turn — the `Stop` hook already covers that, and calling both would
+double-flash. Tool descriptions are the only thing steering when Claude calls
+these, so edit the docstrings in `mcp_server.py` if it over- or under-calls.
+
+**Registered with Claude Code** at user scope, so it is available in every
+project:
+
+```bash
+claude mcp add --transport stdio govee-signals --scope user -- \
+  python3 /Users/sandyshiff/Desktop/govee-signals/mcp_server.py
+claude mcp list      # govee-signals: ... - ✔ Connected
+```
+
+`/mcp` inside a session lists the tools. **Registered with Claude Desktop** via
+`~/Library/Application Support/Claude/claude_desktop_config.json`, which points
+at an absolute interpreter path because Desktop does not inherit your shell's
+`PATH`. Restart Desktop after changing it.
+
+> **Why `signals.py` and not `signal.py`:** the module used to be `signal.py`,
+> which shadows Python's stdlib `signal` for anything launched from this
+> directory. `anyio` — which the MCP SDK depends on — does
+> `from signal import Signals`, so the SDK could not import at all. Renaming
+> fixed it. Do not name a module in here after a stdlib module.
 
 `config.py` loads `.env` explicitly from the project directory, so the hooks
 work regardless of what environment Claude Code launches them in — nothing
 depends on your shell having already exported the keys.
 
-The hook scripts launch `signal.py` detached with `nohup` and exit `0`
+The hook scripts launch `signals.py` detached with `nohup` and exit `0`
 immediately. A slow network or an unreachable bulb can never delay or fail a
 turn. Failures land in `govee-signals.log` (gitignored) instead of your
 terminal.
@@ -117,7 +174,7 @@ Claude Code's other hook events include `SubagentStop`, `SessionStart`,
 
 ### Beyond flashing
 
-`signal.py` deliberately keeps the *what* (a signal's color and count, in
+`signals.py` deliberately keeps the *what* (a signal's color and count, in
 `config.py`) separate from the *how* (`_flash`) and the *transport*
 (`govee_client.py`). A new presentation — a fade, a pulse, a color sweep —
 is a new function next to `_flash`, selected by a key in the signal spec. A
@@ -185,7 +242,8 @@ every completed task with nothing pending. Other types you could add:
 | `.env.example`      | Template with placeholders. Safe to commit.          |
 | `config.py`         | Colors, timing, signal definitions, `.env` loading.  |
 | `govee_client.py`   | Govee API wrapper: throttling, retries, state parse. |
-| `signal.py`         | `flash_signal()` + CLI. The capture/flash/restore.   |
+| `signals.py`        | `flash_signal()` / `flash_color()` + CLI.            |
+| `mcp_server.py`     | MCP server exposing the light as tools.              |
 | `test_signals.py`   | Manual test harness.                                 |
 | `tools/find_device.py` | Lists account devices with sku + id.              |
 | `hooks/on_*.sh`     | One wrapper per Claude Code event.                   |

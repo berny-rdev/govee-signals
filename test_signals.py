@@ -12,7 +12,7 @@ import sys
 import time
 
 import config
-import signal as signal_mod  # this project's signal.py, not the stdlib module
+import signals as signal_mod  # this project's signals.py
 from govee_client import GoveeClient, GoveeError
 
 PAUSE_BETWEEN = 2.0  # breathing room so you can tell the flashes apart
