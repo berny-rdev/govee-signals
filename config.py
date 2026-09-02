@@ -57,6 +57,12 @@ COLORS = {
 # --- Timing ---------------------------------------------------------------
 
 FLASH_COUNT = 2           # how many on/off cycles make up one signal
+
+# Claude Desktop has no hooks, so its signals come from the model calling an
+# MCP tool at the end of a response. Those are more frequent and less
+# momentous than a Claude Code turn ending, so they get a single flash --
+# same colours, lighter touch, and audibly distinct from a hook's double.
+DESKTOP_FLASH_COUNT = 1
 FLASH_ON_SECONDS = 0.5    # bulb held on during a flash
 FLASH_OFF_SECONDS = 0.3   # gap between flashes
 

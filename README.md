@@ -92,17 +92,46 @@ nothing listens on a network socket. It exposes four tools:
 | Tool | Colour | When Claude should call it |
 | ---- | ------ | -------------------------- |
 | `notify_decision_needed()` | 🔵 blue | About to ask you something and wait |
-| `notify_task_complete()`   | 🟢 green | A milestone landed mid-task |
+| `notify_task_complete()`   | 🟢 green | A milestone landed mid-task (Code) / response finished (Desktop) |
 | `notify_error()`           | 🟣 purple | A real blocker needing a human |
 | `flash_custom(color, times)` | any | Escape hatch: named colour or hex |
 
 The colours come from `config.SIGNALS`, so changing a signal's colour changes
 it for the hook and the tool at once.
 
-`notify_task_complete` deliberately tells Claude *not* to call it at the end of
-a turn — the `Stop` hook already covers that, and calling both would
-double-flash. Tool descriptions are the only thing steering when Claude calls
-these, so edit the docstrings in `mcp_server.py` if it over- or under-calls.
+### Profiles: `code` vs `desktop`
+
+The two clients need genuinely different advice, so the server takes a
+`--profile` flag and builds its tool descriptions from it.
+
+| | `--profile code` (default) | `--profile desktop` |
+| --- | --- | --- |
+| Client | Claude Code (any surface) | Claude Desktop chat |
+| Hooks available | Yes | **No** |
+| Flashes per tool call | 2, matching the hooks | **1** |
+| `notify_task_complete` says | *don't* call at end of turn — the `Stop` hook covers it | *do* call at the end of a long response — nothing else will |
+
+The distinction exists because **Claude Desktop chat has no hooks at all**.
+Nothing fires automatically there, so the model calling a tool is the only way
+a signal happens — and the description has to actively encourage it rather than
+warn it off. In Claude Code the opposite is true: the `Stop` hook already
+flashes on every turn end, so a tool call at that moment would double-flash.
+
+Desktop signals get **one** flash rather than two. They are more frequent and
+less momentous than a Claude Code turn ending, and the single flash is
+instantly distinguishable from a hook's double.
+
+The profile is set per registration, so each client gets its own — Claude Code
+via `claude mcp add` (no flag, defaults to `code`), Desktop via `args` in
+`claude_desktop_config.json`.
+
+> **Claude Code inside the Desktop app is still Claude Code.** It reads
+> `~/.claude/settings.json`, so the hooks fire normally and you get the usual
+> double flashes. The `desktop` profile is only for plain Desktop *chat*
+> conversations, which are a different thing running in the same window.
+
+Tool descriptions are the only thing steering when Claude calls these, so edit
+the `*_DESC` strings in `mcp_server.py` if it over- or under-calls.
 
 **Registered with Claude Code** at user scope, so it is available in every
 project:
@@ -112,6 +141,16 @@ claude mcp add --transport stdio govee-signals --scope user -- \
   python3 /Users/sandyshiff/Desktop/govee-signals/mcp_server.py
 claude mcp list      # govee-signals: ... - ✔ Connected
 ```
+
+Which profile a server came up in is recorded in the log on every start:
+
+```
+INFO mcp: govee-signals MCP server starting (profile=desktop, device H6008 / ...)
+```
+
+(The parser uses `add_help=False` so an unrecognised flag can never crash a
+client's server launch — which also means `--help` is silently ignored rather
+than printing usage.)
 
 `/mcp` inside a session lists the tools. **Registered with Claude Desktop** via
 `~/Library/Application Support/Claude/claude_desktop_config.json`, which points
