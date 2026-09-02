@@ -58,31 +58,50 @@ Python 3.8+, standard library only. No `pip install`.
    Claude Code to review, edit, or disable them. If you move this folder, update
    the paths there.
 
-## Two ways in: hooks and MCP tools
+## How it fits together
 
-There are two independent triggers, and they answer different questions.
+Each client uses the one mechanism that actually suits it:
 
-**Hooks** fire at fixed points in a Claude Code session — a turn ended, a
-permission is pending. They are configured once in `~/.claude/settings.json`,
-Claude has no say in whether they run, and they are the same every time.
+| Client | Mechanism | Why |
+| --- | --- | --- |
+| **Claude Code** (terminal, Desktop app, IDE) | **Hooks only** | A hook is *guaranteed* to fire. A tool call depends on the model choosing to make one. |
+| **Claude Desktop chat** | **MCP tools only** | Desktop has no hook mechanism, so tools are the only option. |
 
-**MCP tools** are Claude's own judgment calls *during* a task: "I am about to
-ask a question, the user has looked away, flash the light now." Claude decides
-whether and when to call them, based on the tool descriptions in
-`mcp_server.py`. They fire mid-turn, where a hook cannot reach.
-
-Both bottom out in the same `flash_color()`, so capture/restore, throttling,
-retries and colour definitions behave identically either way.
+Claude Code has **no MCP registration** for this server — `claude mcp list`
+shows nothing. Desktop has **no hooks**, because it cannot. Neither client runs
+both, so the two mechanisms never double-flash each other.
 
 ```
-hooks/on_*.sh            fixed lifecycle moments (Claude Code decides)
-mcp_server.py            in-task tool calls (Claude decides)
+hooks/on_*.sh            Claude Code — fixed lifecycle moments, guaranteed
+mcp_server.py            Claude Desktop chat — tool calls, model's judgment
    │
    └─ signals.py         flash_signal(name) / flash_color(rgb, times)
         │                    capture → flash → restore
         ├─ config.py         colors, timing, signal definitions, .env loading
         └─ govee_client.py   get_state / set_power / set_color / set_brightness
 ```
+
+### Why hooks for Claude Code
+
+Hooks fire mechanically: `Stop` on every turn end, `Notification` on a
+permission prompt, `StopFailure` when a turn dies. Nothing depends on the model
+noticing it should signal. `StopFailure` in particular *cannot* be done with a
+tool — when a turn dies from an API error the model is no longer running and
+cannot call anything.
+
+The MCP path for Claude Code was tried and reverted. If you want it back:
+
+```bash
+claude mcp add --transport stdio govee-signals --scope user -- \
+  python3 /Users/sandyshiff/Desktop/govee-signals/mcp_server.py
+```
+
+The `code` profile is kept correct for exactly that case — its
+`notify_task_complete` tells Claude *not* to fire at turn end, since the `Stop`
+hook already covers it. Running both without that guard double-flashes.
+
+To disable the hooks again, `hooks/disabled-hooks.json` holds the exact config
+and `tools/restore_hooks.py` puts it back.
 
 ### The MCP server
 
@@ -101,29 +120,32 @@ it for the hook and the tool at once.
 
 ### Profiles: `code` vs `desktop`
 
-The two clients need genuinely different advice, so the server takes a
-`--profile` flag and builds its tool descriptions from it.
-
-| | `--profile code` (default) | `--profile desktop` |
+| | `--profile desktop` (in use) | `--profile code` (default, unused) |
 | --- | --- | --- |
-| Client | Claude Code (any surface) | Claude Desktop chat |
-| Hooks available | Yes | **No** |
-| Flashes per tool call | 2, matching the hooks | **1** |
-| `notify_task_complete` says | *don't* call at end of turn — the `Stop` hook covers it | *do* call at the end of a long response — nothing else will |
+| Client | Claude Desktop chat | Claude Code, if ever re-registered |
+| Flashes per tool call | **1** | **2** |
+| `notify_task_complete` says | *do* signal when you finish — nothing else will | *don't* signal at turn end — the `Stop` hook covers it |
 
-The distinction exists because **Claude Desktop chat has no hooks at all**.
-Nothing fires automatically there, so the model calling a tool is the only way
-a signal happens — and the description has to actively encourage it rather than
-warn it off. In Claude Code the opposite is true: the `Stop` hook already
-flashes on every turn end, so a tool call at that moment would double-flash.
-
-Desktop signals get **one** flash rather than two. They are more frequent and
-less momentous than a Claude Code turn ending, and the single flash is
-instantly distinguishable from a hook's double.
+One flash means Desktop; two means a Claude Code hook. Same colours either way,
+so the count is the only thing to learn.
 
 The profile is set per registration, so each client gets its own — Claude Code
 via `claude mcp add` (no flag, defaults to `code`), Desktop via `args` in
 `claude_desktop_config.json`.
+
+## Overlapping flashes
+
+`capture → flash → restore` takes ~6 s and there is no locking, so a signal
+that starts while another is mid-flash captures the *first flash* as the
+"original" state and restores the bulb to it — leaving the light stuck on in a
+signal colour.
+
+Splitting the mechanisms cut most of the exposure: Claude Code fires hooks and
+never tools, Desktop fires tools and never hooks, so the two cannot collide
+over the same event. What remains is two *concurrent Claude Code sessions* —
+a terminal one and one inside the Desktop app — whose `Stop` hooks can land
+within the same ~6 s window. If that becomes a nuisance, an `fcntl.flock`
+around `flash_color()` fixes it.
 
 > **Claude Code inside the Desktop app is still Claude Code.** It reads
 > `~/.claude/settings.json`, so the hooks fire normally and you get the usual

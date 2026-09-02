@@ -7,16 +7,21 @@ these tools fire whenever Claude judges them useful.
 
 Runs over stdio, launched as a subprocess. Nothing listens on a socket.
 
-Two profiles, because the two clients need genuinely different advice:
+In the current setup only Claude Desktop chat uses this server. Claude Code
+signals through the hooks in hooks/ instead, because a hook is guaranteed to
+fire where a tool call depends on the model choosing to make one. Desktop has
+no hooks, so tools are the only option there.
 
-  --profile code     (default) Claude Code. A Stop hook already flashes when
-                     a turn ends, so the tools must NOT duplicate it. Two
-                     flashes, matching the hooks.
+Two profiles, so the server stays correct if it is ever pointed at Claude
+Code again:
 
-  --profile desktop  Claude Desktop chat, which has no hooks at all. Nothing
-                     fires automatically, so here the model IS told to signal
-                     when it finishes a long response. One flash, to stay
-                     light and to be distinguishable from a hook's double.
+  --profile desktop  Claude Desktop chat. No hooks exist, so the model IS
+                     told to signal when it finishes. One flash.
+
+  --profile code     (default) Claude Code, which has hooks. The tools must
+                     NOT duplicate the Stop hook, so the model is told to
+                     signal milestones only. Two flashes, matching the hooks.
+                     Currently unused -- Claude Code has no registration.
 
 The profile is set per registration (Claude Code via `claude mcp add`,
 Desktop via claude_desktop_config.json), so each client gets its own.
@@ -103,12 +108,14 @@ back-and-forth where the user is clearly already watching."""
 if IS_DESKTOP:
     COMPLETE_DESC = f"""Flash the user's light {_TIMES} in green to signal that you have finished responding.
 
-Nothing here flashes automatically, so this is the only way the user learns
-you are done without watching the window.
+NOTHING flashes automatically here. This tool is the only way the user learns
+you are done without watching the window, so if you do not call it, no signal
+happens at all.
 
-Call it as the very last thing you do, when your response took long enough
-that the user plausibly looked away: a lengthy analysis or piece of writing, a
-multi-step task, anything involving several tool calls or a long wait.
+Call it as the very last thing you do, whenever your response took long enough
+that the user plausibly looked away: a multi-step task, a lengthy analysis or
+piece of writing, anything involving several tool calls or a long wait. When
+in doubt on a long response, call it.
 
 Do NOT call it after a short conversational reply that came back in a couple
 of seconds -- the user is still watching, and the flash is just noise."""

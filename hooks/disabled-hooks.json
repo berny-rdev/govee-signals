@@ -1,0 +1,45 @@
+{
+  "_comment": "The Claude Code hook wiring, removed in favour of the MCP tools. To restore: merge this object's 'hooks' key back into ~/.claude/settings.json, or run tools/restore_hooks.py.",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/sandyshiff/Desktop/govee-signals/hooks/on_notification.sh",
+            "timeout": 10,
+            "async": true,
+            "statusMessage": "Govee signal"
+          }
+        ],
+        "matcher": "permission_prompt|worker_permission_prompt|agent_needs_input"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/sandyshiff/Desktop/govee-signals/hooks/on_stop.sh",
+            "timeout": 10,
+            "async": true,
+            "statusMessage": "Govee signal"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/sandyshiff/Desktop/govee-signals/hooks/on_stop_failure.sh",
+            "timeout": 10,
+            "async": true,
+            "statusMessage": "Govee signal"
+          }
+        ]
+      }
+    ]
+  }
+}
